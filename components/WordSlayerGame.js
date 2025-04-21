@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronRight, Repeat, Shield, Sword } from 'lucide-react';
 
 // Word list for the game
 const wordList = [
@@ -31,12 +30,8 @@ const WordSlayerGame = () => {
   const [endTime, setEndTime] = useState(null);
   const [wordQueue, setWordQueue] = useState([]);
   const [wordsToDefeat, setWordsToDefeat] = useState(10);
-  // Add new state to track when the player starts typing each word
   const [wordStartTime, setWordStartTime] = useState(null);
-  // Add new state to track actual typing time
   const [actualTypingTime, setActualTypingTime] = useState(0);
-  // Track if the input is focused
-  const [isInputFocused, setIsInputFocused] = useState(false);
   
   const inputRef = useRef(null);
 
@@ -71,7 +66,6 @@ const WordSlayerGame = () => {
     setActualTypingTime(0);
     setWordStartTime(null);
     
-    // Focus the input field
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.focus();
@@ -83,20 +77,16 @@ const WordSlayerGame = () => {
   const handleInputChange = (e) => {
     if (gameState !== GAME_STATES.PLAYING) return;
     
-    // If this is the first keystroke for this word, record the start time
     if (inputValue === '' && e.target.value !== '') {
       setWordStartTime(Date.now());
     }
     
     setInputValue(e.target.value);
     
-    // Check if the word is correct
     if (e.target.value.toLowerCase() === currentWord.toLowerCase()) {
-      // Calculate damage based on word length and progress
       const damagePerWord = 100 / wordsToDefeat;
       const newHealth = Math.max(0, enemyHealth - damagePerWord);
       
-      // Update the actual typing time if we have a valid start time for this word
       if (wordStartTime) {
         const wordTypingTime = Date.now() - wordStartTime;
         setActualTypingTime(prevTime => prevTime + wordTypingTime);
@@ -108,34 +98,16 @@ const WordSlayerGame = () => {
       setInputValue('');
       setWordStartTime(null);
       
-      // Remove the typed word from the queue
       const newQueue = [...wordQueue];
       newQueue.shift();
       setWordQueue(newQueue);
       
-      // Check if all words are typed (enemy is defeated)
       if (newQueue.length === 0) {
         setGameState(GAME_STATES.WIN);
         setEndTime(Date.now());
       } else {
-        // Set the next word
         setCurrentWord(newQueue[0]);
       }
-    }
-  };
-
-  // Track focus state of the input field
-  const handleFocus = () => {
-    setIsInputFocused(true);
-  };
-
-  const handleBlur = () => {
-    setIsInputFocused(false);
-    // Pause typing time tracking when input loses focus
-    if (wordStartTime) {
-      const pauseTime = Date.now() - wordStartTime;
-      setActualTypingTime(prevTime => prevTime + pauseTime);
-      setWordStartTime(null);
     }
   };
 
@@ -147,11 +119,9 @@ const WordSlayerGame = () => {
       const newPosition = enemyPosition - 0.5;
       setEnemyPosition(newPosition);
       
-      // Check if enemy reached the player
       if (newPosition <= 0) {
         setGameState(GAME_STATES.LOSE);
         setEndTime(Date.now());
-        // Make sure to account for typing time up to this point
         if (wordStartTime) {
           const finalWordTime = Date.now() - wordStartTime;
           setActualTypingTime(prevTime => prevTime + finalWordTime);
@@ -167,23 +137,14 @@ const WordSlayerGame = () => {
   const calculateStats = () => {
     if (!startTime || !endTime) return { wpm: 0, accuracy: 0, timeTaken: 0 };
     
-    // Total game time
     const totalTimeTakenSeconds = (endTime - startTime) / 1000;
-    
-    // Use actualTypingTime for WPM calculation (in milliseconds, convert to minutes)
     const actualTypingTimeMinutes = actualTypingTime / 1000 / 60;
     
-    // Calculate total characters in completed words only
     let totalChars = 0;
-    // We're using a fixed list at the start, so we need to get the completed words
     const completedWords = generateWordQueue().slice(0, correctWords);
     totalChars = completedWords.reduce((total, word) => total + word.length, 0);
     
-    // Calculate traditional WPM
     const traditionalWpm = Math.round((totalChars / 5) / (totalTimeTakenSeconds / 60));
-    
-    // Calculate adjusted WPM based on actual typing time
-    // Prevent division by zero
     const adjustedWpm = actualTypingTimeMinutes > 0 
       ? Math.round((totalChars / 5) / actualTypingTimeMinutes) 
       : 0;
@@ -191,11 +152,11 @@ const WordSlayerGame = () => {
     const accuracy = wordsTyped > 0 ? Math.round((correctWords / wordsTyped) * 100) : 0;
     
     return {
-      traditionalWpm, // Keep the old calculation for comparison
-      wpm: adjustedWpm, // Use the new adjusted WPM as the main stat
+      traditionalWpm,
+      wpm: adjustedWpm,
       accuracy,
       timeTaken: totalTimeTakenSeconds.toFixed(1),
-      actualTypingTime: (actualTypingTime / 1000).toFixed(1), // Convert ms to seconds
+      actualTypingTime: (actualTypingTime / 1000).toFixed(1),
       totalWords: correctWords,
       totalChars
     };
@@ -209,25 +170,25 @@ const WordSlayerGame = () => {
       {gameState === GAME_STATES.START && (
         <div className="text-center max-w-lg">
           <h1 className="text-4xl font-bold mb-8 text-yellow-400 flex items-center justify-center">
-            <Sword className="mr-2" size={36} /> WordSlayer <Shield className="ml-2" size={36} />
+            <span className="mr-2">⚔️</span> WordSlayer <span className="ml-2">🛡️</span>
           </h1>
           <div className="bg-gray-800 p-6 rounded-lg mb-8">
             <h2 className="text-2xl font-semibold mb-4">How to Play:</h2>
             <ul className="text-left space-y-2">
               <li className="flex items-start">
-                <ChevronRight className="mt-1 mr-2 text-yellow-400" size={16} />
+                <span className="mt-1 mr-2 text-yellow-400">▶</span>
                 <span>Type 10 words correctly in sequence to defeat the enemy</span>
               </li>
               <li className="flex items-start">
-                <ChevronRight className="mt-1 mr-2 text-yellow-400" size={16} />
+                <span className="mt-1 mr-2 text-yellow-400">▶</span>
                 <span>Defeat the enemy before it reaches you</span>
               </li>
               <li className="flex items-start">
-                <ChevronRight className="mt-1 mr-2 text-yellow-400" size={16} />
+                <span className="mt-1 mr-2 text-yellow-400">▶</span>
                 <span>Each correct word damages the enemy</span>
               </li>
               <li className="flex items-start">
-                <ChevronRight className="mt-1 mr-2 text-yellow-400" size={16} />
+                <span className="mt-1 mr-2 text-yellow-400">▶</span>
                 <span>Type quickly to defeat the enemy before it reaches you</span>
               </li>
             </ul>
@@ -286,8 +247,6 @@ const WordSlayerGame = () => {
               type="text"
               value={inputValue}
               onChange={handleInputChange}
-              onFocus={handleFocus}
-              onBlur={handleBlur}
               className="w-full max-w-md px-4 py-3 text-xl bg-gray-800 border-2 border-yellow-500 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-yellow-600"
               autoFocus
             />
@@ -347,7 +306,7 @@ const WordSlayerGame = () => {
             onClick={startGame}
             className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-6 rounded-lg text-xl transition-colors flex items-center justify-center mx-auto"
           >
-            <Repeat className="mr-2" size={20} /> Play Again
+            <span className="mr-2">🔄</span> Play Again
           </button>
         </div>
       )}
