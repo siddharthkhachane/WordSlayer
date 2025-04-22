@@ -1,25 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-// Word list for the game
-const wordList = [
-  'dragon', 'knight', 'castle', 'wizard', 'potion', 'spell', 'magic', 'quest',
-  'adventure', 'dungeon', 'treasure', 'monster', 'hero', 'journey', 'battle',
-  'legend', 'myth', 'scroll', 'sword', 'shield', 'armor', 'enemy', 'victory',
-  'defeat', 'champion', 'challenge', 'realm', 'kingdom', 'power', 'strength'
-];
+// Word lists for different difficulties
+const wordLists = {
+  easy: ['cat', 'dog', 'run', 'jump', 'red', 'blue', 'car', 'sun', 'day', 'moon', 'star', 'tree', 'book', 'pen', 'hat', 'cup', 'bed', 'key', 'box', 'ball', 'fish', 'bird', 'ship', 'milk', 'egg', 'door', 'hand', 'foot', 'eye', 'ear'],
+  medium: ['dragon', 'knight', 'castle', 'wizard', 'potion', 'spell', 'magic', 'quest', 'adventure', 'dungeon', 'treasure', 'monster', 'hero', 'journey', 'battle', 'legend', 'myth', 'scroll', 'sword', 'shield', 'armor', 'enemy', 'victory', 'defeat', 'champion', 'challenge', 'realm', 'kingdom', 'power', 'strength'],
+  hard: ['achievement', 'courageous', 'fortunate', 'strategy', 'adventure', 'solution', 'discovery', 'triangle', 'election', 'creature', 'calendar', 'electric', 'vacation', 'dangerous', 'language', 'resource', 'improve', 'backpack', 'volcano', 'favorite']
+};
 
 // Game states
 const GAME_STATES = {
   START: 'start',
+  DIFFICULTY: 'difficulty',
   PLAYING: 'playing',
   WIN: 'win',
   LOSE: 'lose'
+};
+
+// Monster states for Nightmare mode
+const MONSTER_STATES = {
+  FIRE: 'fire',
+  ICE: 'ice'
 };
 
 // Main game component
 const WordSlayerGame = () => {
   // Game state
   const [gameState, setGameState] = useState(GAME_STATES.START);
+  const [difficulty, setDifficulty] = useState('medium');
   const [currentWord, setCurrentWord] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [enemyHealth, setEnemyHealth] = useState(100);
@@ -32,11 +39,36 @@ const WordSlayerGame = () => {
   const [wordsToDefeat, setWordsToDefeat] = useState(10);
   const [wordStartTime, setWordStartTime] = useState(null);
   const [actualTypingTime, setActualTypingTime] = useState(0);
+  const [monsterState, setMonsterState] = useState(MONSTER_STATES.FIRE);
+  const [wordsSinceSwitch, setWordsSinceSwitch] = useState(0);
+  const [nextSwitchCount, setNextSwitchCount] = useState(0);
   
   const inputRef = useRef(null);
 
-  // Get a random word from the word list
+  // Get difficulty settings
+  const getDifficultySettings = (diff) => {
+    switch (diff) {
+      case 'easy':
+        return { speed: 0.35, wordsRequired: 10 };
+      case 'medium':
+        return { speed: 0.4, wordsRequired: 10 };
+      case 'hard':
+        return { speed: 0.5, wordsRequired: 10 };
+      case 'nightmare':
+        return { speed: 0.4, wordsRequired: 10 };
+      default:
+        return { speed: 0.4, wordsRequired: 10 };
+    }
+  };
+
+  // Get a random word based on difficulty
   const getRandomWord = () => {
+    let wordList;
+    if (difficulty === 'nightmare') {
+      wordList = wordLists.medium;
+    } else {
+      wordList = wordLists[difficulty];
+    }
     const randomIndex = Math.floor(Math.random() * wordList.length);
     return wordList[randomIndex];
   };
@@ -52,7 +84,9 @@ const WordSlayerGame = () => {
 
   // Start the game
   const startGame = () => {
+    const settings = getDifficultySettings(difficulty);
     const newWordQueue = generateWordQueue();
+    
     setGameState(GAME_STATES.PLAYING);
     setWordQueue(newWordQueue);
     setCurrentWord(newWordQueue[0]);
@@ -65,6 +99,13 @@ const WordSlayerGame = () => {
     setEndTime(null);
     setActualTypingTime(0);
     setWordStartTime(null);
+    setWordsToDefeat(settings.wordsRequired);
+    
+    if (difficulty === 'nightmare') {
+      setMonsterState(MONSTER_STATES.FIRE);
+      setWordsSinceSwitch(0);
+      setNextSwitchCount(Math.floor(Math.random() * 2) + 1);
+    }
     
     setTimeout(() => {
       if (inputRef.current) {
@@ -83,7 +124,18 @@ const WordSlayerGame = () => {
     
     setInputValue(e.target.value);
     
-    if (e.target.value.toLowerCase() === currentWord.toLowerCase()) {
+    let targetWord = currentWord;
+    
+    // For Nightmare mode, check for correct prefix
+    if (difficulty === 'nightmare') {
+      if (monsterState === MONSTER_STATES.FIRE && e.target.value.startsWith('1')) {
+        targetWord = '1' + currentWord;
+      } else if (monsterState === MONSTER_STATES.ICE && e.target.value.startsWith('2')) {
+        targetWord = '2' + currentWord;
+      }
+    }
+    
+    if (e.target.value.toLowerCase() === targetWord.toLowerCase()) {
       const damagePerWord = 100 / wordsToDefeat;
       const newHealth = Math.max(0, enemyHealth - damagePerWord);
       
@@ -102,6 +154,20 @@ const WordSlayerGame = () => {
       newQueue.shift();
       setWordQueue(newQueue);
       
+      // Handle Nightmare mode monster state switching
+      if (difficulty === 'nightmare') {
+        const newWordsSinceSwitch = wordsSinceSwitch + 1;
+        setWordsSinceSwitch(newWordsSinceSwitch);
+        
+        if (newWordsSinceSwitch >= nextSwitchCount) {
+          setMonsterState(current => 
+            current === MONSTER_STATES.FIRE ? MONSTER_STATES.ICE : MONSTER_STATES.FIRE
+          );
+          setWordsSinceSwitch(0);
+          setNextSwitchCount(Math.floor(Math.random() * 2) + 1);
+        }
+      }
+      
       if (newQueue.length === 0) {
         setGameState(GAME_STATES.WIN);
         setEndTime(Date.now());
@@ -115,8 +181,9 @@ const WordSlayerGame = () => {
   useEffect(() => {
     if (gameState !== GAME_STATES.PLAYING) return;
     
+    const settings = getDifficultySettings(difficulty);
     const interval = setInterval(() => {
-      const newPosition = enemyPosition - 0.5;
+      const newPosition = enemyPosition - settings.speed;
       setEnemyPosition(newPosition);
       
       if (newPosition <= 0) {
@@ -131,7 +198,7 @@ const WordSlayerGame = () => {
     }, 100);
     
     return () => clearInterval(interval);
-  }, [gameState, enemyPosition, wordStartTime]);
+  }, [gameState, enemyPosition, difficulty, wordStartTime]);
 
   // Calculate stats
   const calculateStats = () => {
@@ -143,6 +210,10 @@ const WordSlayerGame = () => {
     let totalChars = 0;
     const completedWords = generateWordQueue().slice(0, correctWords);
     totalChars = completedWords.reduce((total, word) => total + word.length, 0);
+    
+    if (difficulty === 'nightmare') {
+      totalChars += correctWords * 1; // Add 1 char per word for the prefix
+    }
     
     const traditionalWpm = Math.round((totalChars / 5) / (totalTimeTakenSeconds / 60));
     const adjustedWpm = actualTypingTimeMinutes > 0 
@@ -164,6 +235,79 @@ const WordSlayerGame = () => {
 
   const stats = calculateStats();
 
+  // Render functions
+  const renderDifficultySelect = () => (
+    <div className="text-center max-w-lg">
+      <h1 className="text-4xl font-bold mb-8 text-yellow-400 flex items-center justify-center">
+        <span className="mr-2">⚔️</span> WordSlayer <span className="ml-2">🛡️</span>
+      </h1>
+      <h2 className="text-2xl font-semibold mb-6">Select Difficulty</h2>
+      
+      <div className="grid grid-cols-2 gap-4 mb-8">
+        <button
+          onClick={() => setDifficulty('easy')}
+          className={`p-4 rounded-lg border-2 transition-colors ${
+            difficulty === 'easy' ? 'border-green-500 bg-green-800' : 'border-gray-700 hover:border-gray-500'
+          }`}
+        >
+          <h3 className="text-xl font-bold mb-2">Easy</h3>
+          <p className="text-sm">Short words, slower enemy</p>
+        </button>
+        
+        <button
+          onClick={() => setDifficulty('medium')}
+          className={`p-4 rounded-lg border-2 transition-colors ${
+            difficulty === 'medium' ? 'border-yellow-500 bg-yellow-800' : 'border-gray-700 hover:border-gray-500'
+          }`}
+        >
+          <h3 className="text-xl font-bold mb-2">Medium</h3>
+          <p className="text-sm">Normal words, normal speed</p>
+        </button>
+        
+        <button
+          onClick={() => setDifficulty('hard')}
+          className={`p-4 rounded-lg border-2 transition-colors ${
+            difficulty === 'hard' ? 'border-red-500 bg-red-800' : 'border-gray-700 hover:border-gray-500'
+          }`}
+        >
+          <h3 className="text-xl font-bold mb-2">Hard</h3>
+          <p className="text-sm">Complex words, faster enemy</p>
+        </button>
+        
+        <button
+          onClick={() => setDifficulty('nightmare')}
+          className={`p-4 rounded-lg border-2 transition-colors ${
+            difficulty === 'nightmare' ? 'border-purple-500 bg-purple-800' : 'border-gray-700 hover:border-gray-500'
+          }`}
+        >
+          <h3 className="text-xl font-bold mb-2">Nightmare</h3>
+          <p className="text-sm">Fire/Ice switch, faster enemy</p>
+        </button>
+      </div>
+      
+      <button
+        onClick={startGame}
+        className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-8 rounded-lg text-xl transition-colors"
+      >
+        Start Game
+      </button>
+    </div>
+  );
+
+  const getMonsterEmoji = () => {
+    if (difficulty === 'nightmare') {
+      return monsterState === MONSTER_STATES.FIRE ? '🔥👹🔥' : '❄️👹❄️';
+    }
+    return '👹';
+  };
+
+  const getMonsterColor = () => {
+    if (difficulty === 'nightmare') {
+      return monsterState === MONSTER_STATES.FIRE ? 'bg-red-600' : 'bg-blue-400';
+    }
+    return 'bg-red-600';
+  };
+
   // Render based on game state
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-4">
@@ -177,7 +321,7 @@ const WordSlayerGame = () => {
             <ul className="text-left space-y-2">
               <li className="flex items-start">
                 <span className="mt-1 mr-2 text-yellow-400">▶</span>
-                <span>Type 10 words correctly in sequence to defeat the enemy</span>
+                <span>Type words correctly to defeat the enemy</span>
               </li>
               <li className="flex items-start">
                 <span className="mt-1 mr-2 text-yellow-400">▶</span>
@@ -185,28 +329,33 @@ const WordSlayerGame = () => {
               </li>
               <li className="flex items-start">
                 <span className="mt-1 mr-2 text-yellow-400">▶</span>
-                <span>Each correct word damages the enemy</span>
+                <span>Different difficulties have different words and speeds</span>
               </li>
               <li className="flex items-start">
                 <span className="mt-1 mr-2 text-yellow-400">▶</span>
-                <span>Type quickly to defeat the enemy before it reaches you</span>
+                <span>Nightmare mode: Type 1 for fire, 2 for ice before the word</span>
               </li>
             </ul>
           </div>
           <button
-            onClick={startGame}
+            onClick={() => setGameState(GAME_STATES.DIFFICULTY)}
             className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-8 rounded-lg text-xl transition-colors"
           >
-            Start Game
+            Select Difficulty
           </button>
         </div>
       )}
+
+      {gameState === GAME_STATES.DIFFICULTY && renderDifficultySelect()}
 
       {gameState === GAME_STATES.PLAYING && (
         <div className="w-full max-w-4xl">
           <div className="flex justify-between items-center mb-8">
             <div className="text-xl">
               Words: <span className="font-bold">{wordsTyped}</span>
+            </div>
+            <div className="text-xl">
+              Difficulty: <span className="font-bold capitalize">{difficulty}</span>
             </div>
             <div className="w-64 bg-gray-700 h-4 rounded-full overflow-hidden">
               <div
@@ -222,8 +371,8 @@ const WordSlayerGame = () => {
               className="absolute top-1/2 transform -translate-y-1/2 transition-all duration-100 ease-linear"
               style={{ left: `${enemyPosition}%` }}
             >
-              <div className="w-24 h-24 bg-red-600 rounded-lg flex items-center justify-center text-4xl">
-                👹
+              <div className={`w-24 h-24 ${getMonsterColor()} rounded-lg flex items-center justify-center text-4xl`}>
+                {getMonsterEmoji()}
               </div>
             </div>
             
@@ -241,6 +390,14 @@ const WordSlayerGame = () => {
                 {wordQueue.length} / {wordsToDefeat} words left
               </div>
             </div>
+            {difficulty === 'nightmare' && (
+              <div className="mb-4 text-xl font-bold">
+                {monsterState === MONSTER_STATES.FIRE ? 
+                  <span className="text-red-500">🔥 Type 1 first!</span> : 
+                  <span className="text-blue-400">❄️ Type 2 first!</span>
+                }
+              </div>
+            )}
             <div className="text-3xl font-bold mb-4">{currentWord}</div>
             <input
               ref={inputRef}
@@ -272,6 +429,7 @@ const WordSlayerGame = () => {
           
           <div className="bg-gray-800 p-6 rounded-lg mb-8">
             <h2 className="text-2xl font-semibold mb-4">Performance Stats:</h2>
+            <div className="mb-4 text-lg font-bold capitalize">Difficulty: {difficulty}</div>
             <div className="grid grid-cols-2 gap-4 text-left">
               <div className="flex flex-col">
                 <span className="text-gray-400">Words Per Minute</span>
@@ -303,7 +461,7 @@ const WordSlayerGame = () => {
           </div>
           
           <button
-            onClick={startGame}
+            onClick={() => setGameState(GAME_STATES.DIFFICULTY)}
             className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-6 rounded-lg text-xl transition-colors flex items-center justify-center mx-auto"
           >
             <span className="mr-2">🔄</span> Play Again
