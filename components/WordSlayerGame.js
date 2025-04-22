@@ -303,7 +303,7 @@ const WordSlayerGame = () => {
 
   const getMonsterColor = () => {
     if (difficulty === 'nightmare') {
-      return monsterState === MONSTER_STATES.FIRE ? 'bg-red-600' : 'bg-blue-400';
+      return monsterState === MONSTER_STATES.FIRE ? 'bg-red-600' : 'bg-blue-600';
     }
     return 'bg-red-600';
   };
