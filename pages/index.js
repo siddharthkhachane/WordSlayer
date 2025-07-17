@@ -52,7 +52,7 @@ export default function Home() {
             </div>
             <div className="flex items-start">
               <span className="mt-1 mr-3 text-yellow-400">▶</span>
-              <span className="text-gray-300">Multiplayer: Race against players anywhere in the world!</span>
+              <span className="text-gray-300">In multiplayer: Race against other players!</span>
             </div>
             <div className="flex items-start">
               <span className="mt-1 mr-3 text-yellow-400">▶</span>
@@ -61,11 +61,9 @@ export default function Home() {
           </div>
         </div>
         
-        <button
-          onClick={() => setGameMode('menu')}
-          className="mt-6 text-gray-400 hover:text-white transition-colors"
-        >
-        </button>
+        <div className="mt-6 text-center">
+          <p className="text-sm text-purple-400"></p>
+        </div>
       </div>
     </div>
   );

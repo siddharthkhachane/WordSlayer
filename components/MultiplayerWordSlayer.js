@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import io from 'socket.io-client';
+import { Realtime } from 'ably';
 
 // Word lists for different difficulties
 const wordLists = {
@@ -17,9 +17,10 @@ const GAME_STATES = {
   LOSE: 'lose'
 };
 
-const MultiplayerWordSlayer = () => {
-  // Connection state
-  const [socket, setSocket] = useState(null);
+const AblyMultiplayerWordSlayer = () => {
+  // Ably connection
+  const [ably, setAbly] = useState(null);
+  const [channel, setChannel] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [error, setError] = useState('');
 
@@ -48,207 +49,262 @@ const MultiplayerWordSlayer = () => {
   
   const inputRef = useRef(null);
 
-  // Initialize socket connection
+  // Generate word queue
+  const generateWordQueue = (difficulty) => {
+    const wordList = wordLists[difficulty] || wordLists.medium;
+    const queue = [];
+    for (let i = 0; i < 10; i++) {
+      const randomIndex = Math.floor(Math.random() * wordList.length);
+      queue.push(wordList[randomIndex]);
+    }
+    return queue;
+  };
+
+  // Initialize Ably connection
   useEffect(() => {
-    console.log(' Initializing socket connection...');
-    setConnectionStatus('connecting');
-
-    const initializeConnection = async () => {
+    const initializeAbly = async () => {
       try {
-        // Step 1: Initialize the Socket.IO server
-        console.log(' Initializing Socket.IO server...');
-        
-        const initResponse = await fetch('/api/socket', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        console.log(' Server initialization request sent');
-        
-        // Step 2: Wait a moment for server to be ready
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Step 3: Connect to Socket.IO
-        console.log(' Connecting to Socket.IO...');
-        
-        const newSocket = io('http://localhost:3000', {
-          path: '/api/socket',
-          transports: ['websocket', 'polling'],
-          timeout: 15000,
-          forceNew: true,
-          reconnection: true,
-          reconnectionAttempts: 3,
-          reconnectionDelay: 2000,
+        console.log('🔧 Initializing Ably connection...');
+        setConnectionStatus('connecting');
+
+        // Check if API key is available
+        const apiKey = process.env.NEXT_PUBLIC_ABLY_API_KEY;
+        if (!apiKey) {
+          throw new Error('Ably API key not found. Please add NEXT_PUBLIC_ABLY_API_KEY to your environment variables.');
+        }
+
+        // Initialize Ably client
+        const ablyClient = new Realtime({
+          key: apiKey,
+          clientId: `player_${Math.random().toString(36).substring(2, 15)}`
         });
 
-        // Connection events
-        newSocket.on('connect', () => {
-          console.log(' Connected to server! Socket ID:', newSocket.id);
-          setMyPlayerId(newSocket.id);
+        // Set up connection event handlers
+        ablyClient.connection.on('connected', () => {
+          console.log(' Connected to Ably');
           setConnectionStatus('connected');
+          setMyPlayerId(ablyClient.auth.clientId);
           setError('');
-          
-          // Test ping
-          newSocket.emit('ping');
         });
 
-        newSocket.on('connect_error', (err) => {
-          console.error(' Connection error:', err);
-          setConnectionStatus('error');
-          setError(`Connection failed: ${err.message || 'Server not responding'}`);
-        });
-
-        newSocket.on('disconnect', (reason) => {
-          console.log(' Disconnected:', reason);
+        ablyClient.connection.on('disconnected', () => {
+          console.log(' Disconnected from Ably');
           setConnectionStatus('disconnected');
-          setError('Connection lost');
         });
 
-        newSocket.on('pong', () => {
-          console.log(' Ping successful - server is responding');
+        ablyClient.connection.on('failed', (error) => {
+          console.error(' Ably connection failed:', error);
+          setConnectionStatus('error');
+          setError(`Connection failed: ${error.message}`);
         });
 
-        // Game events
-        newSocket.on('roomJoined', (data) => {
-          console.log(' Room joined:', data);
-          setPlayers(data.players);
-          setGameState(GAME_STATES.WAITING);
-          setError('');
-        });
-
-        newSocket.on('roomFull', () => {
-          console.log(' Room is full');
-          setError('Room is full!');
-        });
-
-        newSocket.on('playerJoined', (data) => {
-          console.log(' Player joined:', data);
-          setPlayers(data.players);
-        });
-
-        newSocket.on('playerLeft', (data) => {
-          console.log(' Player left:', data);
-          setPlayers(data.players);
-        });
-
-        newSocket.on('gameStarted', (data) => {
-          console.log(' Game started:', data);
-          setGameData(data.gameData);
-          setCurrentWord(data.gameData.wordQueue[0]);
-          setGameState(GAME_STATES.PLAYING);
-          setStartTime(Date.now());
-          setWordsTyped(0);
-          setCorrectWords(0);
-          setActualTypingTime(0);
-          
-          setTimeout(() => {
-            if (inputRef.current) {
-              inputRef.current.focus();
-            }
-          }, 100);
-        });
-
-        // Handle individual word progression
-        newSocket.on('nextWord', (data) => {
-          console.log(' Next word for me:', data.nextWord);
-          setCurrentWord(data.nextWord);
-          setPlayers(data.players);
-        });
-
-        // Handle other players' progress updates
-        newSocket.on('playerProgress', (data) => {
-          console.log(' Player progress update:', data);
-          setPlayers(data.players);
-        });
-
-        // Keep the old wordCompleted for backward compatibility
-        newSocket.on('wordCompleted', (data) => {
-          console.log(' Word completed (legacy):', data);
-          setPlayers(data.players);
-          if (data.nextWord) {
-            setCurrentWord(data.nextWord);
-          }
-        });
-
-        newSocket.on('gameEnded', (data) => {
-          console.log(' Game ended:', data);
-          setPlayers(data.players);
-          setEndTime(Date.now());
-          
-          if (data.winner === newSocket.id) {
-            setGameState(GAME_STATES.WIN);
-          } else {
-            setGameState(GAME_STATES.LOSE);
-          }
-        });
-
-        newSocket.on('error', (data) => {
-          console.error(' Server error:', data);
-          setError(data.message || 'Server error occurred');
-        });
-
-        setSocket(newSocket);
+        setAbly(ablyClient);
 
       } catch (error) {
-        console.error(' Failed to initialize connection:', error);
+        console.error(' Failed to initialize Ably:', error);
         setConnectionStatus('error');
-        setError('Failed to connect to server');
+        setError(error.message);
       }
     };
 
-    // Start the initialization process
-    initializeConnection();
+    initializeAbly();
 
     return () => {
-      if (socket) {
-        console.log('🧹 Cleaning up socket connection');
-        socket.close();
+      if (ably) {
+        ably.close();
       }
     };
   }, []);
 
-  // Join room
-  const joinRoom = () => {
-    console.log(' Join room clicked:', { roomId, playerName, connectionStatus });
-    
-    if (socket && roomId && playerName && connectionStatus === 'connected') {
-      console.log(' Emitting joinRoom event...');
-      socket.emit('joinRoom', { roomId: roomId.toUpperCase(), playerName });
-      setError('');
-    } else {
-      console.log(' Cannot join room - missing requirements');
+  // Join or create room
+  const joinRoom = async () => {
+    if (!ably || !roomId || !playerName || connectionStatus !== 'connected') {
       setError('Please check connection and fill all fields');
+      return;
+    }
+
+    try {
+      console.log(`🚪 Joining room: ${roomId}`);
+      
+      // Get or create channel for the room
+      const roomChannel = ably.channels.get(`wordslayer:room:${roomId.toUpperCase()}`);
+      
+      // Subscribe to room events
+      await roomChannel.subscribe('player-joined', (message) => {
+        console.log('👤 Player joined:', message.data);
+        setPlayers(prevPlayers => ({
+          ...prevPlayers,
+          [message.data.playerId]: message.data.player
+        }));
+      });
+
+      await roomChannel.subscribe('player-left', (message) => {
+        console.log(' Player left:', message.data);
+        setPlayers(prevPlayers => {
+          const newPlayers = { ...prevPlayers };
+          delete newPlayers[message.data.playerId];
+          return newPlayers;
+        });
+      });
+
+      await roomChannel.subscribe('room-full', () => {
+        console.log(' Room is full');
+        setError('Room is full!');
+      });
+
+      await roomChannel.subscribe('game-started', (message) => {
+        console.log('🎮 Game started:', message.data);
+        const { gameData: newGameData, players: newPlayers } = message.data;
+        setGameData(newGameData);
+        setCurrentWord(newGameData.wordQueue[0]);
+        setPlayers(newPlayers);
+        setGameState(GAME_STATES.PLAYING);
+        setStartTime(Date.now());
+        setWordsTyped(0);
+        setCorrectWords(0);
+        setActualTypingTime(0);
+        
+        setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.focus();
+          }
+        }, 100);
+      });
+
+      await roomChannel.subscribe('word-completed', (message) => {
+        console.log(' Word completed:', message.data);
+        if (message.data.playerId === myPlayerId) {
+          // This is my word completion
+          setCurrentWord(message.data.nextWord);
+        }
+        // Update all players' progress
+        setPlayers(message.data.players);
+      });
+
+      await roomChannel.subscribe('game-ended', (message) => {
+        console.log(' Game ended:', message.data);
+        setPlayers(message.data.players);
+        setEndTime(Date.now());
+        
+        if (message.data.winner === myPlayerId) {
+          setGameState(GAME_STATES.WIN);
+        } else {
+          setGameState(GAME_STATES.LOSE);
+        }
+      });
+
+      // Set the channel
+      setChannel(roomChannel);
+
+      // Join the room
+      await roomChannel.publish('join-room', {
+        playerId: myPlayerId,
+        playerName: playerName,
+        timestamp: Date.now()
+      });
+
+      // Wait for room state
+      const roomState = await roomChannel.history({ limit: 50 });
+      const existingPlayers = {};
+      let playerCount = 0;
+
+      // Process recent messages to get current room state
+      roomState.items.reverse().forEach(message => {
+        if (message.name === 'player-joined') {
+          existingPlayers[message.data.playerId] = message.data.player;
+          playerCount++;
+        } else if (message.name === 'player-left') {
+          delete existingPlayers[message.data.playerId];
+          playerCount--;
+        }
+      });
+
+      // Check room capacity
+      if (playerCount >= 2 && !existingPlayers[myPlayerId]) {
+        setError('Room is full!');
+        await roomChannel.unsubscribe();
+        return;
+      }
+
+      // Add myself to players
+      const myPlayer = {
+        id: myPlayerId,
+        name: playerName,
+        wordsCompleted: 0,
+        joinedAt: Date.now()
+      };
+
+      existingPlayers[myPlayerId] = myPlayer;
+      setPlayers(existingPlayers);
+
+      // Notify others that I joined
+      await roomChannel.publish('player-joined', {
+        playerId: myPlayerId,
+        player: myPlayer
+      });
+
+      setGameState(GAME_STATES.WAITING);
+      setRoomId(roomId.toUpperCase());
+      setError('');
+
+    } catch (error) {
+      console.error(' Error joining room:', error);
+      setError('Failed to join room');
     }
   };
 
-  // Create room
-  const createRoom = () => {
-    console.log(' Create room clicked:', { playerName, connectionStatus });
-    
-    if (socket && playerName && connectionStatus === 'connected') {
-      const newRoomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-      setRoomId(newRoomId);
-      console.log(' Emitting joinRoom event for new room:', newRoomId);
-      socket.emit('joinRoom', { roomId: newRoomId, playerName });
-      setError('');
-    } else {
-      console.log(' Cannot create room - missing requirements');
+  const createRoom = async () => {
+    if (!ably || !playerName || connectionStatus !== 'connected') {
       setError('Please check connection and enter name');
+      return;
     }
+
+    const newRoomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    setRoomId(newRoomId);
+    
+    // Use joinRoom logic with the new room ID
+    setTimeout(() => {
+      joinRoom();
+    }, 100);
   };
 
   // Start game
-  const startGame = () => {
-    if (socket && Object.keys(players).length === 2) {
+  const startGame = async () => {
+    if (!channel || Object.keys(players).length !== 2) {
+      return;
+    }
+
+    try {
       console.log('🎮 Starting game...');
-      socket.emit('startGame', { roomId, difficulty });
+      
+      const wordQueue = generateWordQueue(difficulty);
+      const newGameData = {
+        wordQueue,
+        currentWordIndex: 0,
+        wordsToDefeat: 10,
+        difficulty,
+        startTime: Date.now()
+      };
+
+      // Reset all players' progress
+      const resetPlayers = { ...players };
+      Object.keys(resetPlayers).forEach(playerId => {
+        resetPlayers[playerId].wordsCompleted = 0;
+      });
+
+      await channel.publish('game-started', {
+        gameData: newGameData,
+        players: resetPlayers
+      });
+
+    } catch (error) {
+      console.error(' Error starting game:', error);
+      setError('Failed to start game');
     }
   };
 
   // Handle input change
-  const handleInputChange = (e) => {
+  const handleInputChange = async (e) => {
     if (gameState !== GAME_STATES.PLAYING) return;
     
     if (inputValue === '' && e.target.value !== '') {
@@ -263,12 +319,36 @@ const MultiplayerWordSlayer = () => {
         setActualTypingTime(prevTime => prevTime + wordTypingTime);
       }
       
-      setWordsTyped(wordsTyped + 1);
-      setCorrectWords(correctWords + 1);
+      const newWordsTyped = wordsTyped + 1;
+      const newCorrectWords = correctWords + 1;
+      
+      setWordsTyped(newWordsTyped);
+      setCorrectWords(newCorrectWords);
       setInputValue('');
       setWordStartTime(null);
       
-      socket.emit('wordCompleted', { roomId, playerId: myPlayerId });
+      // Update my progress
+      const updatedPlayers = { ...players };
+      updatedPlayers[myPlayerId].wordsCompleted = newCorrectWords;
+
+      // Check win condition
+      if (newCorrectWords >= gameData.wordsToDefeat) {
+        await channel.publish('game-ended', {
+          winner: myPlayerId,
+          players: updatedPlayers
+        });
+        return;
+      }
+
+      // Get next word
+      const nextWord = gameData.wordQueue[newCorrectWords];
+
+      // Publish word completion
+      await channel.publish('word-completed', {
+        playerId: myPlayerId,
+        nextWord: nextWord,
+        players: updatedPlayers
+      });
     }
   };
 
@@ -325,9 +405,9 @@ const MultiplayerWordSlayer = () => {
         connectionStatus === 'connected' ? 'bg-green-600' : 
         connectionStatus === 'connecting' ? 'bg-yellow-600' : 'bg-red-600'
       }`}>
-        {connectionStatus === 'connected' && '🟢'}
-        {connectionStatus === 'connecting' && '🟡'}
-        {connectionStatus === 'disconnected' && '🔴'}
+        {connectionStatus === 'connected' && '🟢 '}
+        {connectionStatus === 'connecting' && '🟡 '}
+        {connectionStatus === 'disconnected' && '🔴 '}
         {connectionStatus === 'error' && '🔴 Error'}
       </div>
     </div>
@@ -339,6 +419,7 @@ const MultiplayerWordSlayer = () => {
       <h1 className="text-4xl font-bold mb-8 text-yellow-400 flex items-center justify-center">
         <span className="mr-2">⚔️</span> WordSlayer Online <span className="ml-2">🛡️</span>
       </h1>
+      <p className="text-sm text-purple-400 mb-4"></p>
 
       {error && (
         <div className="bg-red-800 border border-red-600 text-red-200 px-4 py-3 rounded mb-4">
@@ -466,6 +547,10 @@ const MultiplayerWordSlayer = () => {
           setRoomId('');
           setPlayers({});
           setError('');
+          if (channel) {
+            channel.unsubscribe();
+            setChannel(null);
+          }
         }}
         className="text-gray-400 hover:text-white transition-colors"
       >
@@ -496,7 +581,7 @@ const MultiplayerWordSlayer = () => {
             <div key={player.id} className="flex-1 relative border-b border-gray-600 last:border-b-0">
               <div className="absolute top-2 left-4 z-10">
                 <div className={`px-3 py-1 rounded-lg text-sm font-bold ${
-                  player.id === myPlayerId ? 'bg-blue-600' : 'bg-purple-600'
+                  player.id === myPlayerId ? 'bg-blue-600' : 'bg-red-600'
                 }`}>
                   {player.name} ({player.wordsCompleted}/{gameData.wordsToDefeat})
                 </div>
@@ -507,7 +592,7 @@ const MultiplayerWordSlayer = () => {
                 style={{ left: `${10 + getPlayerPosition(player.id)}%` }}
               >
                 <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl ${
-                  player.id === myPlayerId ? 'bg-blue-600' : 'bg-purple-600'
+                  player.id === myPlayerId ? 'bg-blue-600' : 'bg-red-600'
                 }`}>
                   🧙
                 </div>
@@ -603,6 +688,10 @@ const MultiplayerWordSlayer = () => {
           setWordsTyped(0);
           setCorrectWords(0);
           setError('');
+          if (channel) {
+            channel.unsubscribe();
+            setChannel(null);
+          }
         }}
         className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-6 rounded-lg text-xl transition-colors flex items-center justify-center mx-auto"
       >
@@ -622,4 +711,4 @@ const MultiplayerWordSlayer = () => {
   );
 };
 
-export default MultiplayerWordSlayer;
+export default AblyMultiplayerWordSlayer;
