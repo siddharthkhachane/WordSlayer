@@ -711,4 +711,4 @@ const AblyMultiplayerWordSlayer = () => {
   );
 };
 
-export default AblyMultiplayerWordSlayer;
+export default AblyMultiplayerWordSlayer; 
